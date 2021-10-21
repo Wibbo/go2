@@ -10,20 +10,25 @@ import (
 	"math/rand"
 )
 
-const (
-	ScreenWidth       = 1600
-	ScreenHeight      = 1000
-	MaxAngle          = 360
-	MinSprites        = 1
-	MaxSprites        = 50000
-	AngleOfRotation   = 16
-	BigSpriteGrowth   = 50
-	SmallSpriteGrowth = 1
-	SpriteCount       = 1
-	ShowInfo          = true
-)
-
 type EdgeBehaviour int
+
+type GameWorld struct {
+	name              string
+	screenWidth       int
+	screenHeight      int
+	maxAngle          int
+	minSprites        int
+	maxSprites        int
+	angleOfRotation   int
+	bigSpriteGrowth   int
+	smallSpriteGrowth int
+	spriteCount       int
+	showInfo          bool
+	speedFactor       int
+	rebound           EdgeBehaviour
+}
+
+var world GameWorld
 
 const (
 	Rebound EdgeBehaviour = iota
@@ -31,7 +36,6 @@ const (
 )
 
 var spriteImage *ebiten.Image
-var SpeedFactor = 1
 
 type Sprite struct {
 	spriteWidth  int
@@ -58,12 +62,17 @@ type Game struct {
 	initialised bool
 }
 
-func spriteSpeed(factor int) (int, int){
-	x := 2*rand.Intn(2)-1
-	y := 2*rand.Intn(2)-1
+func spriteSpeed(factor int, fixed bool) (int, int) {
 
-	xSpeedVariation := 2 * rand.Intn(factor) + 1
-	ySpeedVariation := 2 * rand.Intn(factor) + 1
+	if fixed {
+		return factor, factor
+	}
+
+	x := 2*rand.Intn(2) - 1
+	y := 2*rand.Intn(2) - 1
+
+	xSpeedVariation := 2*rand.Intn(factor) + 1
+	ySpeedVariation := 2*rand.Intn(factor) + 1
 
 	x *= xSpeedVariation
 	y *= ySpeedVariation
@@ -72,7 +81,7 @@ func spriteSpeed(factor int) (int, int){
 }
 
 func init() {
-	img, _, err := ebitenutil.NewImageFromFile("cell.png")
+	img, _, err := ebitenutil.NewImageFromFile("amber-orb.png")
 
 	if err != nil {
 		log.Fatal(err)
@@ -91,26 +100,26 @@ func (s *Sprite) DealWithScreenEdges(behave EdgeBehaviour) {
 		if s.x < 0 {
 			s.x = -s.x
 			s.vx = -s.vx
-		} else if mx := ScreenWidth - s.spriteWidth; mx <= s.x {
-			s.x = ScreenWidth - s.spriteWidth
+		} else if mx := world.screenWidth - s.spriteWidth; mx <= s.x {
+			s.x = world.screenWidth - s.spriteWidth
 			s.vx = -s.vx
 		}
 		if s.y < 0 {
 			s.y = -s.y
 			s.vy = -s.vy
-		} else if my := ScreenHeight - s.spriteHeight; my <= s.y {
-			s.y = ScreenHeight - s.spriteHeight
+		} else if my := world.screenHeight - s.spriteHeight; my <= s.y {
+			s.y = world.screenHeight - s.spriteHeight
 			s.vy = -s.vy
 		}
 	} else if behave == PassThrough {
 		if s.x < -s.spriteWidth {
-			s.x = ScreenWidth
-		} else if s.x > ScreenWidth + s.spriteWidth {
+			s.x = world.screenWidth
+		} else if s.x > world.screenWidth+s.spriteWidth {
 			s.x = 0
 		}
 		if s.y < -s.spriteHeight {
-			s.y = ScreenHeight
-		} else if s.y > ScreenHeight + s.spriteHeight {
+			s.y = world.screenHeight
+		} else if s.y > world.screenHeight+s.spriteHeight {
 			s.y = 0
 		}
 	}
@@ -122,11 +131,11 @@ func (s *Sprite) Update() {
 	s.x += s.vx
 	s.y += s.vy
 
-	s.DealWithScreenEdges(Rebound)
+	s.DealWithScreenEdges(world.rebound)
 
-	s.angle += AngleOfRotation * s.rotation
+	s.angle += world.angleOfRotation * s.rotation
 
-	if s.angle == MaxAngle {
+	if s.angle == world.maxAngle {
 		s.angle = 0
 	}
 }
@@ -142,15 +151,15 @@ func (game *Game) init() {
 		game.initialised = true
 	}()
 
-	game.sprites.sprites = make([]*Sprite, MaxSprites)
-	game.sprites.num = SpriteCount
+	game.sprites.sprites = make([]*Sprite, world.maxSprites)
+	game.sprites.num = world.spriteCount
 	for i := range game.sprites.sprites {
 		w, h := spriteImage.Size()
-		x, y := rand.Intn(ScreenWidth-w), rand.Intn(ScreenHeight-h)
+		x, y := rand.Intn(world.screenWidth-w), rand.Intn(world.screenHeight-h)
 
 		r := utils.PlusOrMinus()
-		vx, vy := spriteSpeed(SpeedFactor)
-		a := rand.Intn(MaxAngle)
+		vx, vy := spriteSpeed(world.speedFactor, false)
+		a := rand.Intn(world.maxAngle)
 
 		game.sprites.sprites[i] = &Sprite{
 			spriteWidth:  w,
@@ -171,38 +180,38 @@ func (game *Game) Update() error {
 	}
 
 	if ebiten.IsKeyPressed(ebiten.KeyQ) {
-		SpeedFactor += 1
+		world.speedFactor += 1
 	}
 
 	if ebiten.IsKeyPressed(ebiten.KeyA) {
-		SpeedFactor -= 1
+		world.speedFactor -= 1
 	}
 
 	if ebiten.IsKeyPressed(ebiten.KeyArrowUp) {
-		game.sprites.num += SmallSpriteGrowth
-		if MaxSprites < game.sprites.num {
-			game.sprites.num = MaxSprites
+		game.sprites.num += world.smallSpriteGrowth
+		if world.maxSprites < game.sprites.num {
+			game.sprites.num = world.maxSprites
 		}
 	}
 
 	if ebiten.IsKeyPressed(ebiten.KeyArrowRight) {
-		game.sprites.num += BigSpriteGrowth
-		if MaxSprites < game.sprites.num {
-			game.sprites.num = MaxSprites
+		game.sprites.num += world.bigSpriteGrowth
+		if world.maxSprites < game.sprites.num {
+			game.sprites.num = world.maxSprites
 		}
 	}
 
 	if ebiten.IsKeyPressed(ebiten.KeyArrowLeft) {
-		game.sprites.num -= BigSpriteGrowth
-		if game.sprites.num < MinSprites {
-			game.sprites.num = MinSprites
+		game.sprites.num -= world.bigSpriteGrowth
+		if game.sprites.num < world.minSprites {
+			game.sprites.num = world.minSprites
 		}
 	}
 
 	if ebiten.IsKeyPressed(ebiten.KeyArrowDown) {
-		game.sprites.num -= SmallSpriteGrowth
-		if game.sprites.num < MinSprites {
-			game.sprites.num = MinSprites
+		game.sprites.num -= world.smallSpriteGrowth
+		if game.sprites.num < world.minSprites {
+			game.sprites.num = world.minSprites
 		}
 	}
 
@@ -211,7 +220,7 @@ func (game *Game) Update() error {
 }
 
 func (game *Game) DisplayInformation(showInfo bool, screen *ebiten.Image) {
-	if ShowInfo {
+	if showInfo {
 		msg := fmt.Sprintf("TPS: %0.2f\nFPS: %0.1f\nNum of sprites: %d",
 			ebiten.CurrentTPS(), ebiten.CurrentFPS(), game.sprites.num)
 		ebitenutil.DebugPrint(screen, msg)
@@ -231,21 +240,40 @@ func (game *Game) Draw(screen *ebiten.Image) {
 		s := game.sprites.sprites[i]
 		game.op.GeoM.Reset()
 		//game.op.GeoM.Translate(-float64(w)/2, -float64(h)/2)
-		//game.op.GeoM.Rotate(2 * math.Pi * float64(s.angle) / MaxAngle)
+		//game.op.GeoM.Rotate(2 * math.Pi * float64(s.angle) / maxAngle)
 		//game.op.GeoM.Translate(float64(w)/2, float64(h)/2)
 		game.op.GeoM.Translate(float64(s.x), float64(s.y))
 		screen.DrawImage(spriteImage, &game.op)
 	}
 
-	game.DisplayInformation(ShowInfo, screen)
+	game.DisplayInformation(world.showInfo, screen)
 }
 
 func (game *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
-	return ScreenWidth, ScreenHeight
+	return world.screenWidth, world.screenHeight
 }
 
 func main() {
-	ebiten.SetWindowSize(ScreenWidth, ScreenHeight)
+
+	println("Starting the app")
+
+	world = GameWorld{
+		name:              "world",
+		screenWidth:       1600,
+		screenHeight:      1000,
+		maxAngle:          360,
+		minSprites:        1,
+		maxSprites:        50000,
+		angleOfRotation:   16,
+		bigSpriteGrowth:   50,
+		smallSpriteGrowth: 1,
+		spriteCount:       3,
+		showInfo:          true,
+		speedFactor:       10,
+		rebound:           PassThrough,
+	}
+
+	ebiten.SetWindowSize(world.screenWidth, world.screenHeight)
 	ebiten.SetWindowTitle("Sprite handling")
 	ebiten.SetWindowResizable(true)
 	if err := ebiten.RunGame(&Game{}); err != nil {
